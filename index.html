@@ -1,0 +1,1363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MYTH</title>
+<style>
+  :root{--pad:20px}
+
+  /* TRUTH = light mode, MYTH = night mode */
+  /* --ink is the one stick that has no colour of its own: it flips with the page */
+  body.light{--bg:#ffffff;--fg:#000000;--ink:#111111}
+  body.dark {--bg:#000000;--fg:#ffffff;--ink:#ffffff}
+
+  *{box-sizing:border-box;margin:0;padding:0}
+
+  html{-webkit-text-size-adjust:100%}
+  html,body{overflow-x:hidden}
+
+  body{
+    background:var(--bg);
+    color:var(--fg);
+    font-family:"Helvetica Neue Light","HelveticaNeue-Light","Helvetica Neue",Helvetica,Arial,sans-serif;
+    font-weight:300;
+    font-size:13px;
+    line-height:1.35;
+    letter-spacing:.01em;
+    min-height:100vh;
+    transition:background .35s ease,color .35s ease;
+  }
+
+  button,input,select,textarea{font:inherit;letter-spacing:inherit;color:inherit;background:none;border:0}
+
+  a{color:inherit;text-decoration:none}
+  ul{list-style:none}
+
+  .label{text-transform:uppercase;letter-spacing:.06em}
+  .chrome-type{font-size:10px;text-transform:uppercase;letter-spacing:.1em}
+
+  /* ---------- sticks ---------- */
+
+  .sticks{
+    position:fixed;
+    inset:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:var(--bg);
+    cursor:pointer;
+    z-index:10;
+    overflow:hidden;
+    transform:translateZ(0);
+    backface-visibility:hidden;
+    transition:background .6s ease,opacity .6s ease;
+  }
+
+  .sticks:focus-visible{outline:1px solid var(--fg);outline-offset:-8px}
+
+  /* colour-mode toggle lives on the gate too */
+  .gate-toggle{
+    position:absolute;
+    left:var(--pad);
+    bottom:var(--pad);
+    padding:2px 4px;
+    cursor:pointer;
+  }
+
+  .gate-toggle:hover{background:var(--fg);color:var(--bg)}
+
+  .sticks.bg .gate-toggle{display:none}
+
+  .word{width:100%;max-width:880px;height:auto;padding:0 var(--pad);overflow:visible}
+
+  .s{
+    fill:none;
+    stroke-width:11;
+    stroke-linecap:square;    /* rectangular ends that overrun each joint, so the letters read solid */
+    transform-box:fill-box;
+    transform-origin:center;
+    transform:
+      translate(
+        calc(var(--tx) + var(--px,0px) * var(--depth)),
+        calc(var(--ty) + var(--py,0px) * var(--depth))
+      )
+      rotate(var(--r));
+    transition:transform .28s ease-out,stroke 1.2s ease;
+    marker-start:url(#hinge);
+    marker-end:url(#hinge);
+  }
+
+  /* the dot is the page showing through — white on white, a punched hole on black */
+  .hinge-dot{fill:var(--bg);transition:fill .35s ease}
+
+  /* 1 — the pile assembles into the word */
+  .sticks.go .s{
+    transform:translate(0,0) rotate(0deg);
+    transition:transform 1.7s cubic-bezier(.16,1,.3,1);
+    transition-delay:var(--d);
+  }
+
+  /* 2 — the layer slips behind the interface; the sticks themselves don't move.
+     Full-strength colour in both modes — opacity would blend toward the page
+     and shift the hues (pastel on white, muddy on black). */
+  .sticks.bg{
+    z-index:0;
+    background:none;
+    cursor:default;
+    pointer-events:none;
+  }
+
+  /* 3 — the logo piles into a fresh configuration, then gravity takes it.
+     These rules come last on purpose: they must outrank .go above. */
+
+  .letter{
+    transform-box:fill-box;
+    transform-origin:center;
+    transition:transform 1.25s cubic-bezier(.16,1,.3,1);
+  }
+
+  .sticks.regen .s{
+    transform:translate(0,0) rotate(0deg);
+    transition:transform 1.25s cubic-bezier(.16,1,.3,1);
+    transition-delay:var(--d);
+    animation:none;
+  }
+
+  /* gravity: slow to leave, fast to land — but unhurried */
+  .sticks.fall .s{
+    transform:translate(var(--lx),var(--ly)) rotate(var(--lr));
+    transition:transform 1.5s cubic-bezier(.55,.06,.68,.19);
+    transition-delay:var(--ld);
+    animation:none;
+  }
+
+  .sticks.fall .letter{transition:transform 1.5s cubic-bezier(.55,.06,.68,.19)}
+
+  /* ---------- the bug ---------- */
+
+  .bug-layer{
+    position:fixed;
+    inset:0;
+    z-index:4;
+    overflow:hidden;
+    pointer-events:none;
+    opacity:0;
+    transition:opacity .8s ease 1.2s;
+  }
+
+  body.entered .bug-layer{opacity:1}
+
+  .bug{
+    position:absolute;
+    top:0;
+    left:0;
+    width:22px;
+    pointer-events:auto;
+    cursor:default;
+  }
+
+  /* rotation lives on an inner element so the label stays upright */
+  .bug-spin{display:block}
+
+  .bug svg{display:block;width:22px;height:auto}
+
+  .say{
+    position:absolute;
+    left:30px;
+    top:3px;
+    white-space:nowrap;
+    font-size:11px;
+    opacity:0;
+    transition:opacity .2s ease;
+  }
+
+  .bug:hover .say{opacity:1}
+
+  /* ---------- window ---------- */
+
+  .titlebar,.tabbar,.view,.status{opacity:0;transition:opacity .7s ease}
+
+  body.entered .titlebar,
+  body.entered .tabbar,
+  body.entered .view,
+  body.entered .status{opacity:1}
+
+  .titlebar{
+    position:fixed;
+    top:0;left:0;right:0;
+    z-index:6;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:16px;
+    height:22px;
+    padding:0 var(--pad);
+    background:var(--bg);
+    border-bottom:1px solid var(--fg);
+  }
+
+  .path{display:flex;align-items:center}
+
+  /* the wordmark looks inert — clicking it is the secret */
+  .markbtn{cursor:default;padding:0 4px}
+
+  /* classic tab folder: tabs sit on a rule, the active one cuts through it */
+  .tabbar{
+    position:fixed;
+    top:22px;left:0;right:0;
+    z-index:5;
+    display:flex;
+    align-items:flex-end;
+    gap:3px;
+    height:26px;
+    padding:0 var(--pad);
+    background:var(--bg);
+    border-bottom:1px solid var(--fg);
+    overflow-x:auto;
+    scrollbar-width:none;
+  }
+
+  .tabbar::-webkit-scrollbar{display:none}
+
+  .tab{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    flex:0 0 auto;
+    max-width:220px;
+    height:19px;
+    padding:0 8px;
+    border:1px solid var(--fg);
+    border-bottom:0;
+    background:var(--bg);
+    white-space:nowrap;
+    cursor:pointer;
+    opacity:.55;
+  }
+
+  .tab:hover{opacity:1}
+
+  .tab.active{height:25px;margin-bottom:-1px;opacity:1}
+
+  .tab .name{overflow:hidden;text-overflow:ellipsis}
+
+  .close{
+    width:11px;height:11px;
+    line-height:9px;
+    text-align:center;
+    font-size:10px;
+    border:1px solid var(--fg);
+    cursor:pointer;
+  }
+
+  .close:hover{background:var(--fg);color:var(--bg)}
+
+  .newtab{
+    flex:0 0 auto;
+    height:19px;
+    padding:0 9px;
+    border:1px solid var(--fg);
+    border-bottom:0;
+    background:var(--bg);
+    cursor:pointer;
+    opacity:.55;
+  }
+
+  .newtab:hover{opacity:1}
+
+  /* ---------- views ---------- */
+
+  .view{
+    position:relative;
+    z-index:1;
+    padding:var(--pad);
+    padding-top:calc(48px + var(--pad));
+    padding-bottom:60px;
+  }
+
+  .panel{display:none}
+  .panel.active{display:block}
+
+  /* ---------- index ---------- */
+
+  header{
+    display:flex;
+    justify-content:space-between;
+    align-items:baseline;
+    gap:24px;
+    padding-bottom:var(--pad);
+  }
+
+  .brand{font-weight:300;cursor:default}
+
+  .contact{display:flex;gap:20px}
+
+  .contact a:hover{background:var(--fg);color:var(--bg)}
+
+  .info{
+    border-top:1px solid var(--fg);
+    padding:14px 0 40px;
+    display:grid;
+    grid-template-columns:120px minmax(0,42em);
+    gap:24px;
+  }
+
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:var(--pad);min-height:58vh}
+
+  .col{border-top:1px solid var(--fg);cursor:pointer}
+
+  .col > .label{display:flex;justify-content:space-between;align-items:baseline;padding:14px 0 10px}
+
+  .note{font-size:10px;text-transform:uppercase;letter-spacing:.1em;opacity:.55}
+
+  /* a row is a link plus its own add-to-cart control */
+  li{
+    display:grid;
+    grid-template-columns:1fr 26px;
+    border-bottom:1px solid var(--fg);
+  }
+
+  li a{
+    display:grid;
+    grid-template-columns:2.5em 1fr auto;
+    gap:12px;
+    padding:7px 0;
+    cursor:pointer;
+  }
+
+  li a:hover{background:var(--fg);color:var(--bg)}
+
+  .meta{text-align:right;padding-right:10px}
+
+  .add{
+    border-left:1px solid var(--fg);
+    font-size:11px;
+    line-height:1;
+    cursor:pointer;
+  }
+
+  .add:hover,.add.in{background:var(--fg);color:var(--bg)}
+
+  /* ---------- project ---------- */
+
+  .doc{border-top:1px solid var(--fg);padding-top:14px;max-width:42em}
+
+  .doc-meta{
+    display:flex;
+    justify-content:space-between;
+    font-size:10px;
+    text-transform:uppercase;
+    letter-spacing:.1em;
+    padding-bottom:28px;
+  }
+
+  .doc h1{font-size:34px;font-weight:300;letter-spacing:-.01em;padding-bottom:14px}
+
+  .empty{
+    font-size:10px;
+    text-transform:uppercase;
+    letter-spacing:.1em;
+    opacity:.55;
+    border-top:1px solid var(--fg);
+    padding-top:14px;
+  }
+
+  .action{
+    margin-top:20px;
+    padding:5px 10px;
+    border:1px solid var(--fg);
+    font-size:10px;
+    text-transform:uppercase;
+    letter-spacing:.1em;
+    cursor:pointer;
+  }
+
+  .action:hover{background:var(--fg);color:var(--bg)}
+
+  /* myth pages hold images */
+  .frames{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:var(--pad)}
+
+  .frame{margin:0;border:1px solid var(--fg);aspect-ratio:4/3;display:flex;align-items:flex-end}
+
+  .frame span{font-size:10px;text-transform:uppercase;letter-spacing:.1em;opacity:.55;padding:8px}
+
+  /* truth pages hold info */
+  .fact{
+    display:grid;
+    grid-template-columns:80px 1fr;
+    gap:16px;
+    align-items:baseline;
+    border-bottom:1px solid var(--fg);
+    padding:8px 0;
+  }
+
+  .fact .label{font-size:10px;letter-spacing:.1em;opacity:.55}
+
+  .facts + .empty{border-top:0}
+
+  /* ---------- message ---------- */
+
+  .compose{border-top:1px solid var(--fg);padding-top:14px;max-width:42em}
+
+  .field-row{
+    display:grid;
+    grid-template-columns:80px 1fr;
+    gap:16px;
+    align-items:baseline;
+    border-bottom:1px solid var(--fg);
+    padding:8px 0;
+  }
+
+  .field-row .label{font-size:10px;letter-spacing:.1em;opacity:.55}
+
+  .field{width:100%;outline:none}
+
+  .field::placeholder{color:inherit;opacity:.35}
+
+  .body-field{
+    width:100%;
+    min-height:220px;
+    padding:14px 0;
+    resize:vertical;
+    outline:none;
+    line-height:1.5;
+  }
+
+  /* ---------- catalogue ---------- */
+
+  .cat{border-top:1px solid var(--fg);padding-top:14px}
+
+  .cat-item{
+    display:grid;
+    grid-template-columns:2.5em 1fr auto 26px;
+    gap:12px;
+    align-items:center;
+    border-bottom:1px solid var(--fg);
+    padding:7px 0;
+  }
+
+  .cat-kind{
+    font-size:10px;
+    text-transform:uppercase;
+    letter-spacing:.1em;
+    opacity:.55;
+  }
+
+  .drop{
+    border-left:1px solid var(--fg);
+    font-size:11px;
+    text-align:center;
+    cursor:pointer;
+    align-self:stretch;
+  }
+
+  .drop:hover{background:var(--fg);color:var(--bg)}
+
+  /* ---------- status bar ---------- */
+
+  .status{
+    position:fixed;
+    left:0;right:0;bottom:0;
+    z-index:6;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:16px;
+    height:24px;
+    padding:0 var(--pad);
+    background:var(--bg);
+    border-top:1px solid var(--fg);
+  }
+
+  .statusleft,
+  .statusright{display:flex;align-items:center;gap:16px}
+
+  .mode,.cartbtn{cursor:pointer;padding:0 4px}
+
+  .mode:hover,.cartbtn:hover{background:var(--fg);color:var(--bg)}
+
+  @media (prefers-reduced-motion:reduce){
+    .s,.sticks,.letter,body,.word{transition:none}
+  }
+
+  @media (max-width:700px){
+    .info{grid-template-columns:1fr;gap:10px;padding-bottom:32px}
+    .cols{grid-template-columns:1fr;gap:32px;min-height:0}
+    header{flex-direction:column;gap:6px}
+    .contact{gap:14px}
+    .s{stroke-width:14}
+    .doc h1{font-size:26px}
+  }
+</style>
+</head>
+<body class="light">
+
+<noscript><style>.sticks{display:none}.titlebar,.tabbar,.view,.status{opacity:1}.panel{display:block}</style></noscript>
+
+<div class="sticks" id="sticks" role="button" tabindex="0" aria-label="Enter MYTH">
+  <svg class="word" viewBox="0 0 780 300" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <defs>
+      <!-- Martens hinge: a dot at each end of a stick; shared endpoints read as joints -->
+      <marker id="hinge" viewBox="0 0 2 2" refX="1" refY="1" markerWidth=".5" markerHeight=".5" markerUnits="strokeWidth">
+        <circle class="hinge-dot" cx="1" cy="1" r="1"/>
+      </marker>
+    </defs>
+    <!-- Y paints before M so the brown M diagonal crosses OVER the green stem -->
+    <g class="letter" data-letter="Y">
+      <line class="s" x1="251" y1="81"  x2="311" y2="151" stroke="#e8720c" style="--tx:65px;--ty:59px;--r:-53deg;--d:240ms;--depth:1.6;--fx:239px;--fy:-76px;--fr:26deg;--dx:13px;--dy:14px;--dr:-5deg;--fd:12s;--ad:-7s"/>
+      <line class="s" x1="371" y1="79"  x2="311" y2="151" stroke="#f2c200" style="--tx:57px;--ty:-3px;--r:36deg;--d:300ms;--depth:.9;--fx:359px;--fy:95px;--fr:-58deg;--dx:-14px;--dy:10px;--dr:6deg;--fd:15s;--ad:-3s"/>
+      <line class="s" x1="311" y1="151" x2="313" y2="221" stroke="#1a9e4b" style="--tx:118px;--ty:-26px;--r:-68deg;--d:360ms;--depth:2.1;--fx:-132px;--fy:-36px;--fr:63deg;--dx:11px;--dy:-13px;--dr:-7deg;--fd:10s;--ad:-6s"/>
+    </g>
+    <g class="letter" data-letter="M">
+      <line class="s" x1="62"  y1="222" x2="59"  y2="82"  stroke="var(--ink)" style="--tx:290px;--ty:-20px;--r:-41deg;--d:0ms;--depth:1.4;--fx:60px;--fy:-92px;--fr:-62deg;--dx:14px;--dy:-11px;--dr:5deg;--fd:13s;--ad:0s"/>
+      <line class="s" x1="59"  y1="82"  x2="131" y2="176" stroke="#9a9a9a" style="--tx:309px;--ty:39px;--r:62deg;--d:60ms;--depth:.7;--fx:205px;--fy:121px;--fr:48deg;--dx:-12px;--dy:9px;--dr:-6deg;--fd:16s;--ad:-2s"/>
+      <line class="s" x1="131" y1="176" x2="199" y2="79"  stroke="#7d2b2b" style="--tx:207px;--ty:-8px;--r:-27deg;--d:120ms;--depth:1.9;--fx:475px;--fy:-58px;--fr:71deg;--dx:16px;--dy:12px;--dr:7deg;--fd:11s;--ad:-5s"/>
+      <line class="s" x1="201" y1="80"  x2="203" y2="221" stroke="#c62828" style="--tx:218px;--ty:-11px;--r:48deg;--d:180ms;--depth:.5;--fx:-112px;--fy:70px;--fr:-35deg;--dx:-15px;--dy:-8px;--dr:4deg;--fd:14s;--ad:-1s"/>
+    </g>
+    <g class="letter" data-letter="T">
+      <line class="s" x1="421" y1="82"  x2="541" y2="79"  stroke="#2e9bd6" style="--tx:-119px;--ty:70px;--r:57deg;--d:420ms;--depth:.6;--fx:-61px;--fy:180px;--fr:-44deg;--dx:-16px;--dy:-9px;--dr:5deg;--fd:17s;--ad:-4s"/>
+      <line class="s" x1="481" y1="80"  x2="479" y2="222" stroke="#2b3fd4" style="--tx:-70px;--ty:31px;--r:-33deg;--d:480ms;--depth:1.7;--fx:260px;--fy:-31px;--fr:52deg;--dx:12px;--dy:11px;--dr:-6deg;--fd:13s;--ad:-8s"/>
+    </g>
+    <g class="letter" data-letter="H">
+      <line class="s" x1="591" y1="81"  x2="589" y2="221" stroke="#8e44ad" style="--tx:-212px;--ty:-5px;--r:44deg;--d:540ms;--depth:1.1;--fx:-330px;--fy:-111px;--fr:-29deg;--dx:-13px;--dy:12px;--dr:7deg;--fd:11s;--ad:-2s"/>
+      <line class="s" x1="711" y1="79"  x2="709" y2="222" stroke="#b5cc18" style="--tx:-286px;--ty:-27px;--r:29deg;--d:660ms;--depth:.8;--fx:-350px;--fy:40px;--fr:-51deg;--dx:-11px;--dy:13px;--dr:6deg;--fd:12s;--ad:-5s"/>
+      <!-- the brown crossbar paints last so both of its hinge dots stay visible -->
+      <line class="s" x1="589" y1="151" x2="711" y2="149" stroke="#8a6d3b" style="--tx:-294px;--ty:40px;--r:-59deg;--d:600ms;--depth:2.0;--fx:-90px;--fy:30px;--fr:67deg;--dx:15px;--dy:-10px;--dr:-4deg;--fd:16s;--ad:-9s"/>
+    </g>
+  </svg>
+  <button class="gate-toggle chrome-type" id="stickBtnGate" type="button"></button>
+</div>
+
+<div class="bug-layer" aria-hidden="true">
+  <div class="bug" id="bug">
+    <span class="bug-spin" id="bugSpin">
+      <svg viewBox="0 0 24 26" xmlns="http://www.w3.org/2000/svg">
+        <g stroke="var(--ink)" stroke-width="1.1" stroke-linecap="round">
+          <path d="M5 10 L1 7"/><path d="M5 14 L1 15"/><path d="M5.5 18 L2 21"/>
+          <path d="M19 10 L23 7"/><path d="M19 14 L23 15"/><path d="M18.5 18 L22 21"/>
+        </g>
+        <circle cx="12" cy="5.5" r="3.6" fill="var(--ink)"/>
+        <ellipse cx="12" cy="14.5" rx="7.6" ry="9" fill="#c62828"/>
+        <path d="M12 6 L12 23" stroke="var(--ink)" stroke-width="1.1"/>
+        <g fill="#ffffff">
+          <circle cx="8" cy="11" r="1.7"/><circle cx="16" cy="11" r="1.7"/>
+          <circle cx="7.4" cy="17" r="1.5"/><circle cx="16.6" cy="17" r="1.5"/>
+          <circle cx="12" cy="20.6" r="1.2"/>
+        </g>
+      </svg>
+    </span>
+    <span class="say">There is a bug&hellip;</span>
+  </div>
+</div>
+
+<div class="titlebar chrome-type">
+  <span class="path"><button class="markbtn mark-word" id="mark" type="button">MYTH</button><span id="pathTail"> / INDEX</span></span>
+  <span id="count"></span>
+</div>
+
+<nav class="tabbar chrome-type" id="tabbar" aria-label="Open tabs"></nav>
+
+<div class="view" id="view">
+
+  <section class="panel active" id="panel-index">
+
+    <header>
+      <a class="brand mark-word" href="#">MYTH</a>
+      <nav class="contact">
+        <a href="mailto:myth.office.nyc@gmail.com">myth.office.nyc@gmail.com</a>
+        <a href="https://instagram.com/myth.office" target="_blank" rel="noopener">@myth.office</a>
+      </nav>
+    </header>
+
+    <section class="info">
+      <span class="label"><span class="mark-word">MYTH</span> Info</span>
+      <div>
+        <p><span class="mark-word">MYTH</span> is not registered or licensed in any state or country. We are constantly working on it&hellip;</p>
+      </div>
+    </section>
+
+    <section class="cols">
+
+      <div class="col" data-side="myth">
+        <span class="label"><span class="mark-word">MYTH</span><span class="note">Images</span></span>
+        <ul data-list="myth"></ul>
+      </div>
+
+      <div class="col" data-side="truth">
+        <span class="label">TRUTH<span class="note">Info</span></span>
+        <ul data-list="truth"></ul>
+      </div>
+
+    </section>
+
+  </section>
+
+</div>
+
+<div class="status chrome-type">
+  <span class="statusleft">
+    <button class="mode" id="modeBtn" type="button"></button>
+    <button class="mode" id="stickBtn" type="button"></button>
+  </span>
+  <span class="statusright">
+    <button class="cartbtn" id="cartBtn" type="button"></button>
+    <span id="tabcount"></span>
+  </span>
+</div>
+
+<script>
+(function(){
+  var body    = document.body;
+  var sticks  = document.getElementById('sticks');
+  var tabbar  = document.getElementById('tabbar');
+  var view    = document.getElementById('view');
+  var modeBtn = document.getElementById('modeBtn');
+  var cartBtn = document.getElementById('cartBtn');
+  var pathEl  = document.getElementById('pathTail');
+  var countEl = document.getElementById('count');
+  var tabsEl  = document.getElementById('tabcount');
+  var calm    = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  var MAILTO = 'myth.office.nyc@gmail.com';
+
+  /* ---------- data ---------- */
+
+  // Myth N and Truth N are the same project seen twice:
+  // myth carries the images, truth carries the info
+  var WORK = {
+    myth: [
+      {title:'Myth 001', year:'2026'},
+      {title:'Myth 002', year:'2025'},
+      {title:'Myth 003', year:'2025'},
+      {title:'Myth 004', year:'2024'},
+      {title:'Myth 005', year:'2024'}
+    ],
+    truth: [
+      {title:'Truth 001', year:'2026'},
+      {title:'Truth 002', year:'2025'},
+      {title:'Truth 003', year:'2025'},
+      {title:'Truth 004', year:'2024'},
+      {title:'Truth 005', year:'2024'}
+    ]
+  };
+
+  function slug(kind, title){
+    return kind + '-' + title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  }
+
+  /* ---------- the index list ---------- */
+
+  function buildList(kind){
+    var ul = document.querySelector('ul[data-list="' + kind + '"]');
+    ul.textContent = '';
+
+    WORK[kind].forEach(function(item, i){
+      var id = slug(kind, item.title);
+
+      var li = document.createElement('li');
+
+      var a = document.createElement('a');
+      a.href = '#';
+      a.innerHTML = '<span class="num"></span><span class="title"></span><span class="meta"></span>';
+      a.querySelector('.num').textContent   = ('0' + (i + 1)).slice(-2);
+      a.querySelector('.title').textContent = item.title;
+      a.querySelector('.meta').textContent  = item.year;
+      a.addEventListener('click', function(e){
+        e.preventDefault();
+        openWork(kind, item.title, item.year);
+      });
+
+      var add = document.createElement('button');
+      add.type = 'button';
+      add.className = 'add';
+      add.setAttribute('data-cart', id);
+      add.title = 'Add to cart';
+      add.addEventListener('click', function(e){
+        e.stopPropagation();
+        toggleCart(kind, item.title, item.year);
+      });
+
+      li.appendChild(a);
+      li.appendChild(add);
+      ul.appendChild(li);
+    });
+  }
+
+  /* ---------- cart ---------- */
+
+  var cart = [];
+
+  function inCart(id){
+    return cart.some(function(c){ return c.id === id; });
+  }
+
+  function toggleCart(kind, title, year){
+    var id = slug(kind, title);
+    if(inCart(id)) cart = cart.filter(function(c){ return c.id !== id; });
+    else cart.push({id:id, kind:kind, title:title, year:year});
+    paintCart();
+    renderCatalogue();
+  }
+
+  function paintCart(){
+    cartBtn.textContent = 'Cart (' + cart.length + ')';
+    document.querySelectorAll('[data-cart]').forEach(function(btn){
+      var on = inCart(btn.getAttribute('data-cart'));
+      btn.classList.toggle('in', on);
+      btn.textContent = on ? '−' : '+';
+    });
+  }
+
+  function renderCatalogue(){
+    var panel = document.getElementById('panel-catalogue');
+    if(!panel) return;
+
+    var wrap = panel.querySelector('.cat');
+    wrap.textContent = '';
+
+    var head = document.createElement('div');
+    head.className = 'doc-meta';
+    head.innerHTML = '<span>Catalogue</span><span></span>';
+    head.lastChild.textContent = cart.length + (cart.length === 1 ? ' item' : ' items');
+    wrap.appendChild(head);
+
+    if(!cart.length){
+      var none = document.createElement('p');
+      none.className = 'empty';
+      none.textContent = 'Cart is empty — add projects from the index';
+      wrap.appendChild(none);
+      return;
+    }
+
+    cart.forEach(function(item, i){
+      var row = document.createElement('div');
+      row.className = 'cat-item';
+
+      var n = document.createElement('span');
+      n.textContent = ('0' + (i + 1)).slice(-2);
+
+      var t = document.createElement('span');
+      t.textContent = item.title;
+
+      var k = document.createElement('span');
+      k.className = 'cat-kind';
+      k.textContent = item.kind + ' · ' + item.year;
+
+      var x = document.createElement('button');
+      x.type = 'button';
+      x.className = 'drop';
+      x.textContent = '×';
+      x.setAttribute('aria-label', 'Remove ' + item.title);
+      x.addEventListener('click', function(){
+        toggleCart(item.kind, item.title, item.year);
+      });
+
+      row.appendChild(n); row.appendChild(t); row.appendChild(k); row.appendChild(x);
+      wrap.appendChild(row);
+    });
+
+    var send = document.createElement('button');
+    send.type = 'button';
+    send.className = 'action';
+    send.textContent = 'Send as message';
+    send.addEventListener('click', function(){
+      var lines = cart.map(function(c, i){
+        return ('0' + (i + 1)).slice(-2) + '  ' + c.title + '  (' + c.kind.toUpperCase() + ', ' + c.year + ')';
+      }).join('\n');
+      compose('Catalogue request', 'I am interested in:\n\n' + lines + '\n\n');
+    });
+    wrap.appendChild(send);
+  }
+
+  /* ---------- tabs ---------- */
+
+  var tabs   = [{id:'index', title:'Index', kind:'index'}];
+  var active = 'index';
+  var notes  = 0;
+
+  function modeFor(kind){
+    if(kind === 'myth')  return 'dark';
+    if(kind === 'truth') return 'light';
+    return null;
+  }
+
+  function setMode(mode){
+    body.classList.toggle('dark',  mode === 'dark');
+    body.classList.toggle('light', mode !== 'dark');
+    modeBtn.textContent = mode === 'dark' ? 'Mode: MYTH' : 'Mode: TRUTH';
+  }
+
+  function currentMode(){
+    return body.classList.contains('dark') ? 'dark' : 'light';
+  }
+
+  function panelFor(tab){
+    var el = document.getElementById('panel-' + tab.id);
+    if(el) return el;
+
+    el = document.createElement('section');
+    el.className = 'panel';
+    el.id = 'panel-' + tab.id;
+
+    if(tab.kind === 'catalogue'){
+      el.innerHTML = '<div class="cat"></div>';
+      view.appendChild(el);
+      renderCatalogue();
+      return el;
+    }
+
+    if(tab.kind === 'note'){
+      el.innerHTML =
+        '<div class="compose">' +
+          '<div class="field-row"><span class="label">To</span><span>' + MAILTO + '</span></div>' +
+          '<div class="field-row"><span class="label">Subject</span>' +
+            '<input class="field" type="text" data-field="subject" placeholder="An idea"></div>' +
+          '<textarea class="body-field" data-field="body" placeholder="Write it here&hellip;"></textarea>' +
+          '<button type="button" class="action">Send</button>' +
+        '</div>';
+
+      var subject = el.querySelector('[data-field="subject"]');
+      var text    = el.querySelector('[data-field="body"]');
+
+      subject.value = tab.subject || '';
+      text.value    = tab.body || '';
+
+      // the draft lives on the tab, so the title follows what you type
+      subject.addEventListener('input', function(){
+        tab.subject = subject.value;
+        tab.title   = subject.value.trim() || tab.fallback;
+        render();
+      });
+
+      text.addEventListener('input', function(){ tab.body = text.value; });
+
+      el.querySelector('.action').addEventListener('click', function(){
+        location.href = 'mailto:' + MAILTO +
+          '?subject=' + encodeURIComponent(subject.value || 'From myth.office') +
+          '&body='    + encodeURIComponent(text.value || '');
+      });
+
+      view.appendChild(el);
+      return el;
+    }
+
+    var isMyth = tab.kind === 'myth';
+    el.innerHTML =
+      '<div class="doc">' +
+        '<div class="doc-meta"><span>' + (isMyth ? '<span class="mark-word">MYTH</span> &mdash; images' : 'TRUTH &mdash; info') + '</span><span></span></div>' +
+        '<h1></h1>' +
+        (isMyth
+          ? '<div class="frames">' +
+              '<figure class="frame"><span>Image 01 &mdash; pending</span></figure>' +
+              '<figure class="frame"><span>Image 02 &mdash; pending</span></figure>' +
+              '<figure class="frame"><span>Image 03 &mdash; pending</span></figure>' +
+            '</div>'
+          : '<div class="facts">' +
+              '<div class="fact"><span class="label">Year</span><span data-fact="year"></span></div>' +
+              '<div class="fact"><span class="label">Status</span><span>In progress</span></div>' +
+              '<div class="fact"><span class="label">Registered</span><span>Nowhere</span></div>' +
+            '</div>' +
+            '<p class="empty">Project info pending</p>') +
+        '<button type="button" class="action"></button>' +
+      '</div>';
+
+    el.querySelector('.doc-meta span + span').textContent = tab.year || '--';
+    el.querySelector('h1').textContent = tab.title;
+
+    var yearFact = el.querySelector('[data-fact="year"]');
+    if(yearFact) yearFact.textContent = tab.year || '--';
+
+    var btn = el.querySelector('.action');
+    function paintBtn(){
+      btn.textContent = inCart(slug(tab.kind, tab.title)) ? 'In cart — remove' : 'Add to cart';
+    }
+    paintBtn();
+    btn.addEventListener('click', function(){
+      toggleCart(tab.kind, tab.title, tab.year);
+      paintBtn();
+    });
+
+    view.appendChild(el);
+    return el;
+  }
+
+  function render(){
+    tabbar.textContent = '';
+
+    tabs.forEach(function(tab){
+      var el = document.createElement('button');
+      el.type = 'button';
+      el.className = 'tab' + (tab.id === active ? ' active' : '');
+      el.setAttribute('aria-current', tab.id === active ? 'true' : 'false');
+
+      var name = document.createElement('span');
+      name.className = 'name';
+      name.textContent = tab.title;
+      el.appendChild(name);
+
+      if(tab.id !== 'index'){
+        var x = document.createElement('span');
+        x.className = 'close';
+        x.textContent = '×';
+        x.setAttribute('role', 'button');
+        x.setAttribute('aria-label', 'Close ' + tab.title);
+        x.addEventListener('click', function(e){ e.stopPropagation(); close(tab.id); });
+        el.appendChild(x);
+      }
+
+      el.addEventListener('click', function(){ activate(tab.id); });
+      tabbar.appendChild(el);
+    });
+
+    var plus = document.createElement('button');
+    plus.type = 'button';
+    plus.className = 'newtab';
+    plus.textContent = '+';
+    plus.setAttribute('aria-label', 'Write a message');
+    plus.title = 'Write a message';
+    plus.addEventListener('click', function(){ compose(); });
+    tabbar.appendChild(plus);
+
+    tabs.forEach(function(tab){
+      panelFor(tab).classList.toggle('active', tab.id === active);
+    });
+
+    var here = tabs.find(function(t){ return t.id === active; });
+    pathEl.textContent = ' / ' + (here ? here.title.toUpperCase() : 'INDEX');
+
+    var open = tabs.length - 1;
+    countEl.textContent = open === 0 ? 'No tabs open' : open + (open === 1 ? ' tab open' : ' tabs open');
+    tabsEl.textContent  = countEl.textContent;
+
+    paintCart();
+  }
+
+  function activate(id){
+    active = id;
+    var tab  = tabs.find(function(t){ return t.id === id; });
+    var mode = tab ? modeFor(tab.kind) : null;
+    if(mode) setMode(mode);
+    render();
+  }
+
+  function openWork(kind, title, year){
+    var id = slug(kind, title);
+    if(!tabs.some(function(t){ return t.id === id; })){
+      tabs.push({id:id, title:title, kind:kind, year:year});
+    }
+    activate(id);
+  }
+
+  // every + is a fresh draft; open as many as you like
+  function compose(subject, text){
+    notes++;
+    var id = 'note-' + notes;
+    var fallback = 'Message ' + notes;
+    tabs.push({
+      id:id,
+      title:(subject || fallback),
+      fallback:fallback,
+      kind:'note',
+      subject:subject || '',
+      body:text || ''
+    });
+    activate(id);
+  }
+
+  function catalogue(){
+    if(!tabs.some(function(t){ return t.id === 'catalogue'; })){
+      tabs.push({id:'catalogue', title:'Catalogue', kind:'catalogue'});
+    }
+    activate('catalogue');
+    renderCatalogue();
+  }
+
+  function close(id){
+    var i = tabs.findIndex(function(t){ return t.id === id; });
+    if(i < 1) return;
+    tabs.splice(i, 1);
+
+    var panel = document.getElementById('panel-' + id);
+    if(panel) panel.remove();
+
+    if(active === id) activate(tabs[i - 1].id);
+    else render();
+  }
+
+  /* ---------- wiring ---------- */
+
+  Array.prototype.forEach.call(document.querySelectorAll('.col'), function(col){
+    col.addEventListener('click', function(){
+      setMode(col.getAttribute('data-side') === 'myth' ? 'dark' : 'light');
+    });
+  });
+
+  // every MYTH word on the site rebuilds the logo — capture phase, so a word
+  // inside a column doesn't also flip the mode on its way up
+  document.addEventListener('click', function(e){
+    var mw = e.target.closest ? e.target.closest('.mark-word') : null;
+    if(!mw) return;
+    e.preventDefault();
+    e.stopPropagation();
+    regenerate();
+  }, true);
+
+  cartBtn.addEventListener('click', catalogue);
+
+  modeBtn.addEventListener('click', function(){
+    setMode(currentMode() === 'dark' ? 'light' : 'dark');
+  });
+
+  /* ---------- rebuilding the logo ---------- */
+
+  var letters    = Array.prototype.slice.call(document.querySelectorAll('.letter'));
+  var lines      = Array.prototype.slice.call(document.querySelectorAll('.s'));
+  var dropTimer  = null;
+
+  // letter centres from raw geometry — getBBox would bake in the children's
+  // current transforms and mis-aim the pile (the old "letters fly up" bug)
+  var LETTER_CENTERS = letters.map(function(g){
+    var minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
+    Array.prototype.forEach.call(g.querySelectorAll('.s'), function(l){
+      minX = Math.min(minX, +l.getAttribute('x1'), +l.getAttribute('x2'));
+      maxX = Math.max(maxX, +l.getAttribute('x1'), +l.getAttribute('x2'));
+      minY = Math.min(minY, +l.getAttribute('y1'), +l.getAttribute('y2'));
+      maxY = Math.max(maxY, +l.getAttribute('y1'), +l.getAttribute('y2'));
+    });
+    return {cx: (minX + maxX) / 2, cy: (minY + maxY) / 2};
+  });
+
+  // DOM order is paint order (Y M T H) — this maps reading order back to it
+  var VISUAL_ORDER = [];
+  ['M','Y','T','H'].forEach(function(ch){
+    letters.forEach(function(g, i){
+      if(g.getAttribute('data-letter') === ch) VISUAL_ORDER.push(i);
+    });
+  });
+
+  // every rebuild deals one arrangement: the word itself, pairs stacked,
+  // a triple and a stray, or all four letters over each other
+  var GROUPINGS = [
+    [[0],[1],[2],[3]],      // M Y T H — still reads as the word, loosely
+    [[0,1],[2],[3]],        // MY stacked, T H alone
+    [[0],[1,2],[3]],
+    [[0],[1],[2,3]],
+    [[0,1],[2,3]],          // two stacked pairs
+    [[0,1,2],[3]],          // a triple and the H
+    [[0],[1,2,3]],
+    [[0,1,2,3]]             // the full pile
+  ];
+
+  function rand(min, max){ return min + Math.random() * (max - min); }
+
+  /* ---------- stick colour modes ---------- */
+
+  var NEONS = ['#ff1493','#39ff14','#00f0ff','#fff01f','#ff5f1f','#bc13fe','#04d9ff','#ff3131','#ccff00'];
+  var MODES = ['original','fluoro','gradient','bw'];
+  var MODE_LABEL = {original:'Original', fluoro:'Fluoro', gradient:'Gradient', bw:'B/W'};
+  var colorMode = 'original';
+  try{
+    var savedMode = sessionStorage.getItem('myth-sticks');
+    if(MODES.indexOf(savedMode) > -1) colorMode = savedMode;
+  }catch(e){}
+
+  var stickBtn = document.getElementById('stickBtn');
+
+  // one gradient per stick, laid along its length; the stops re-randomise per paint
+  var SVGNS = 'http://www.w3.org/2000/svg';
+  var gradDefs = document.createElementNS(SVGNS, 'defs');
+  lines.forEach(function(el, i){
+    var g = document.createElementNS(SVGNS, 'linearGradient');
+    g.setAttribute('id', 'sgrad-' + i);
+    g.setAttribute('gradientUnits', 'userSpaceOnUse');
+    g.setAttribute('x1', el.getAttribute('x1'));
+    g.setAttribute('y1', el.getAttribute('y1'));
+    g.setAttribute('x2', el.getAttribute('x2'));
+    g.setAttribute('y2', el.getAttribute('y2'));
+    [0, 1].forEach(function(off){
+      var s = document.createElementNS(SVGNS, 'stop');
+      s.setAttribute('offset', off);
+      g.appendChild(s);
+    });
+    gradDefs.appendChild(g);
+  });
+  document.querySelector('svg.word').appendChild(gradDefs);
+
+  function paintSticks(){
+    lines.forEach(function(el, i){
+      if(colorMode === 'original'){
+        el.style.stroke = '';
+      } else if(colorMode === 'bw'){
+        el.style.stroke = 'var(--ink)';
+      } else if(colorMode === 'fluoro'){
+        el.style.stroke = NEONS[Math.floor(Math.random() * NEONS.length)];
+      } else {
+        var stops = document.getElementById('sgrad-' + i).children;
+        var h = Math.floor(rand(0, 360));
+        stops[0].setAttribute('stop-color', 'hsl(' + h + ',95%,55%)');
+        stops[1].setAttribute('stop-color', 'hsl(' + (Math.floor(h + rand(50, 180)) % 360) + ',95%,55%)');
+        el.style.stroke = 'url(#sgrad-' + i + ')';
+      }
+    });
+    var label = 'Sticks: ' + MODE_LABEL[colorMode];
+    stickBtn.textContent = label;
+    gateStickBtn.textContent = label;
+  }
+
+  function cycleMode(){
+    colorMode = MODES[(MODES.indexOf(colorMode) + 1) % MODES.length];
+    try{ sessionStorage.setItem('myth-sticks', colorMode); }catch(e){}
+    paintSticks();
+  }
+
+  var gateStickBtn = document.getElementById('stickBtnGate');
+
+  stickBtn.addEventListener('click', cycleMode);
+
+  gateStickBtn.addEventListener('click', function(e){
+    e.stopPropagation();   // the gate itself is a button — don't enter, just recolour
+    cycleMode();
+  });
+
+  function regenerate(){
+    if(state !== 'in') return;
+
+    // the letters gather LOW — stacking over each other just above the floor,
+    // so nothing flies up to mid-air before the fall
+    var svg   = sticks.querySelector('.word');
+    var rect  = svg.getBoundingClientRect();
+    var scale = rect.height / 300;
+    // deal an arrangement, then lay its clusters left-to-right across the middle
+    var midU  = scale ? ((window.innerHeight / 2) - rect.top) / scale : 150;
+    var grouping = GROUPINGS[Math.floor(Math.random() * GROUPINGS.length)];
+    var n = grouping.length;
+    var isWord  = n === 4;
+    // clusters sit close — a stray letter lands beside the pile, not across the room —
+    // and each drifts off the even grid so the spacing never looks deliberate
+    var spacing = n === 4 ? rand(150, 180) : n === 3 ? rand(135, 180) : n === 2 ? rand(150, 210) : 0;
+    var baseX   = 390 + rand(-20, 20);
+
+    grouping.forEach(function(cluster, ci){
+      var cx = baseX + (ci - (n - 1) / 2) * spacing + (isWord ? 0 : rand(-22, 22));
+      var cy = midU + rand(-18, 18);
+
+      cluster.forEach(function(vpos){
+        var li = VISUAL_ORDER[vpos];
+        var c  = LETTER_CENTERS[li];
+        var solo = cluster.length === 1;
+
+        // stacked letters tumble; lone letters stay closer to upright
+        var jx  = solo ? rand(-12, 12) : rand(-28, 28);
+        var jy  = solo ? rand(-10, 10) : rand(-24, 24);
+        var rot = isWord ? rand(-7, 7) : solo ? rand(-14, 14) : rand(-32, 32);
+
+        letters[li].style.transform =
+          'translate(' + (cx + jx - c.cx).toFixed(0) + 'px,' + (cy + jy - c.cy).toFixed(0) + 'px)' +
+          ' rotate(' + rot.toFixed(0) + 'deg)';
+      });
+    });
+
+    // fluorescent and gradient sticks take fresh colours with every rebuild
+    if(colorMode === 'fluoro' || colorMode === 'gradient') paintSticks();
+
+    sticks.classList.remove('fall');
+    sticks.classList.add('regen');
+
+    // settle, hold a beat, then gravity
+    clearTimeout(dropTimer);
+    dropTimer = setTimeout(drop, calm ? 0 : 1700);
+  }
+
+  function drop(){
+    var svg   = sticks.querySelector('.word');
+    var rect  = svg.getBoundingClientRect();
+    var scale = rect.height / 300;
+    if(!scale) return;
+
+    var floorUnits = ((window.innerHeight - 30) - rect.top) / scale;   // a few px above the status bar rule
+    var half = (window.innerWidth / 2 - 34) / scale;
+
+    // natural gravity: each stick drops from wherever it currently is, drifting
+    // a little sideways on the way down. A spread word falls spread; a piled
+    // logo falls into a heap — the landing inherits its shape from the source.
+    var contentLeft = rect.left + 20;   // the .word's own padding
+
+    lines.forEach(function(el, i){
+      var x1 = +el.getAttribute('x1'), y1 = +el.getAttribute('y1');
+      var x2 = +el.getAttribute('x2'), y2 = +el.getAttribute('y2');
+
+      var ownAngle = Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI;
+
+      var r = el.getBoundingClientRect();
+      var curX = ((r.left + r.right) / 2 - contentLeft) / scale;
+
+      // most sticks settle flat; the odd one ends propped at a steeper angle
+      var tilt = Math.random() < .22 ? rand(-48, 48) : rand(-16, 16);
+
+      // the stick's footprint at its final angle — no part may leave the screen
+      var len   = Math.sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1)) + 11; // + square-cap overrun
+      var rad   = tilt * Math.PI / 180;
+      var halfW = Math.abs(Math.cos(rad)) * len / 2 + Math.abs(Math.sin(rad)) * 5.5;
+      var halfH = Math.abs(Math.sin(rad)) * len / 2 + Math.abs(Math.cos(rad)) * 5.5;
+
+      var targetX = Math.max(390 - half + halfW, Math.min(390 + half - halfW, curX + rand(-70, 70)));
+
+      el.style.setProperty('--lx', (targetX - (x1 + x2) / 2).toFixed(1) + 'px');
+      el.style.setProperty('--ly', (floorUnits - halfH - rand(0, 5) - (y1 + y2) / 2).toFixed(1) + 'px');
+      el.style.setProperty('--lr', (tilt - ownAngle).toFixed(1) + 'deg');
+      el.style.setProperty('--ld', Math.round(i * 60 + rand(0, 140)) + 'ms');
+    });
+
+    letters.forEach(function(g){ g.style.transform = 'none'; });
+
+    sticks.classList.remove('regen');
+    sticks.classList.add('fall');
+  }
+
+  // the floor moves when the window does — fallen sticks settle again
+  var resettleTimer = null;
+  window.addEventListener('resize', function(){
+    clearTimeout(resettleTimer);
+    resettleTimer = setTimeout(function(){
+      if(sticks.classList.contains('fall')) drop();
+    }, 180);
+  });
+
+  /* ---------- the bug crawls ---------- */
+
+  var bugEl   = document.getElementById('bug');
+  var bugSpin = document.getElementById('bugSpin');
+
+  var bx = 120, by = 260;      // where it is
+  var ba = -Math.PI / 2;       // which way it faces
+  var tx = bx, ty = by;        // where it is headed
+  var scurryUntil = 0;         // it keeps going a moment after you lose it
+  var lastT = 0;
+
+  function clamp(v, lo, hi){ return v < lo ? lo : v > hi ? hi : v; }
+
+  function pickSpot(){
+    tx = rand(30, Math.max(60, window.innerWidth  - 40));
+    ty = rand(70, Math.max(120, window.innerHeight - 60));
+  }
+
+  // disturbed: head away from whatever just touched it
+  function fleeFrom(mx, my){
+    var dx = bx - mx, dy = by - my;
+    var len = Math.sqrt(dx * dx + dy * dy) || 1;
+    var far = rand(110, 230);
+    tx = clamp(bx + (dx / len) * far, 30, Math.max(60, window.innerWidth  - 40));
+    ty = clamp(by + (dy / len) * far, 70, Math.max(120, window.innerHeight - 60));
+  }
+
+  bugEl.addEventListener('pointerenter', function(e){
+    fleeFrom(e.clientX, e.clientY);
+    scurryUntil = performance.now() + 2200;
+  });
+
+  function crawl(t){
+    if(!lastT) lastT = t;
+    var dt = Math.min(64, t - lastT) / 1000;
+    lastT = t;
+
+    var dx = tx - bx, dy = ty - by;
+    var dist = Math.sqrt(dx * dx + dy * dy);
+    var moving = t < scurryUntil && dist > 4;
+
+    if(moving){
+      // turn toward the target before committing to it
+      var want = Math.atan2(dy, dx);
+      var diff = Math.atan2(Math.sin(want - ba), Math.cos(want - ba));
+      var turn = 2.2 * dt;
+      ba += Math.abs(diff) < turn ? diff : (diff > 0 ? turn : -turn);
+
+      var speed = 22;                    // px per second — an amble
+      bx += Math.cos(ba) * speed * dt;
+      by += Math.sin(ba) * speed * dt;
+    }
+
+    // the body rocks side to side only while the legs are working
+    var wobble = moving ? Math.sin(t / 110) * 4 : 0;
+
+    bugEl.style.transform   = 'translate(' + bx.toFixed(1) + 'px,' + by.toFixed(1) + 'px)';
+    bugSpin.style.transform = 'rotate(' + (ba * 180 / Math.PI + 90 + wobble).toFixed(1) + 'deg)';
+
+    requestAnimationFrame(crawl);
+  }
+
+  window.addEventListener('resize', function(){
+    bx = clamp(bx, 30, Math.max(60, window.innerWidth  - 40));
+    by = clamp(by, 70, Math.max(120, window.innerHeight - 60));
+  });
+
+  /* ---------- entry ---------- */
+
+  var ASSEMBLE = 2600;
+  var state = 'idle';
+
+  function land(){
+    state = 'in';
+    body.classList.add('entered');
+    try{ sessionStorage.setItem('myth-in', '1'); }catch(e){}
+    setTimeout(function(){
+      sticks.classList.add('bg');
+      // the word slips behind the interface and falls after a short beat
+      clearTimeout(dropTimer);
+      dropTimer = setTimeout(drop, calm ? 0 : 550);
+    }, calm ? 0 : 450);
+  }
+
+  function enter(){
+    if(state === 'assembling'){ land(); return; }
+    if(state !== 'idle') return;
+    state = 'assembling';
+    sticks.classList.add('go');
+    setTimeout(function(){ if(state === 'assembling') land(); }, calm ? 0 : ASSEMBLE);
+  }
+
+  sticks.addEventListener('click', enter);
+
+  sticks.addEventListener('keydown', function(e){
+    if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); enter(); }
+  });
+
+  if(!calm && window.matchMedia('(hover: hover)').matches){
+    sticks.addEventListener('pointermove', function(e){
+      if(state !== 'idle') return;
+      var x = (e.clientX / window.innerWidth  - .5) * 62;
+      var y = (e.clientY / window.innerHeight - .5) * 62;
+      sticks.style.setProperty('--px', x.toFixed(1) + 'px');
+      sticks.style.setProperty('--py', y.toFixed(1) + 'px');
+    });
+  }
+
+  buildList('myth');
+  buildList('truth');
+  setMode('light');
+  render();
+  paintSticks();
+
+  // first visit gets the gate; every refresh after skips it — the logo piles
+  // into a random configuration behind the menu, then the sticks fall again
+  var seen = false;
+  try{ seen = sessionStorage.getItem('myth-in') === '1'; }catch(e){}
+
+  if(seen){
+    state = 'in';
+    body.classList.add('entered');
+    sticks.classList.add('bg');
+    setTimeout(regenerate, calm ? 0 : 450);
+  }
+
+  if(calm){
+    bugEl.style.transform = 'translate(78vw,22vh)';
+  } else {
+    pickSpot();
+    requestAnimationFrame(crawl);
+  }
+})();
+</script>
+
+</body>
+</html>
